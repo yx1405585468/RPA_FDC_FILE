@@ -1,0 +1,29 @@
+{
+	"requestId": "123",
+	"algorithm": "inline_by_wafer",
+	"requestParam": {
+		"dateRange": [{
+			"start": "2023-08-19 13:34:38",
+			"end": "2023-12-25 11:55:48"
+		}],
+		"lot": [],
+		"operNo": [],
+		"prodg1": ["L2800Z3N",
+			"L2800Z2N",
+			"L2800Z1N"
+		],
+		"productId": [],
+		"eqp": [],
+		"tool": [],
+		"recipeName": [],
+		"waferId": {
+			"good": ["NBX392-15", "NBX392-20", "NBX392-24", "NBX391-24", "NBX391-25", "NBX548-09",
+				"NBX391-01", "NBX391-02", "NBX391-13", "NBX391-17"
+			],
+			"bad": ["NBX500-10", "NBX500-01", "NBX500-09"]
+		},
+		"uploadId": "20240110170016024",
+		"grpby_list": ["PRODUCT_ID", "EQP_NAME"]
+	}
+
+}
