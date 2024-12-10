@@ -1,0 +1,253 @@
+数模一体化：http://10.52.199.81
+建模平台：http://10.52.192.75
+Jupyter：http://10.52.198.43:8989/tree
+
+kafka:
+10.52.199.81:9092
+mva_query_topic   mva_flow_topic
+mva_query_inline_topic    mva_flow_topic
+aimp 
+5000
+
+linux主机详情： http://10.52.199.81:3000
+
+
+CREATE TABLE etl.`DWD_POC_CASE_FD_UVA_DATA_CASE3_PROCESSED` (
+  `WAFER_ID` varchar(128) NULL,
+  `TOOL_ID` int(11) NULL,
+  `RUN_ID` int(11) NULL,
+  `EQP_NAME` varchar(128) NULL,
+  `PRODUCT_ID` varchar(128) NULL,
+  `PRODG1` varchar(256) NULL,
+  `TOOL_NAME` varchar(128) NULL,
+  `LOT_ID` varchar(128) NULL,
+  `RECIPE_NAME` varchar(128) NULL,
+  `OPER_NO` varchar(128) NULL,
+  `START_TIME` datetime NULL,
+  `parametric_name` varchar(128) NULL,
+  `CASE_INFO` varchar(128) NULL,
+  `STATUS` varchar(128) NULL,
+  `STATISTIC_RESULT` double NULL,
+  `label` int(11) NULL
+) ENGINE=OLAP
+DUPLICATE KEY(`WAFER_ID`)
+COMMENT 'OLAP'
+DISTRIBUTED BY HASH(`WAFER_ID`) BUCKETS 10
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1",
+"in_memory" = "false",
+"storage_format" = "V2",
+"disable_auto_compaction" = "false"
+)
+
+
+
+
+
+进入kafka:
+sudo docker exec -it kafka /bin/bash
+cd /opt/bitnami/kafka/bin
+
+往topic发消息
+sh kafka-console-producer.sh --broker-list 127.0.0.1:9092 --topic mva_query_defect_topic2
+
+{"requestId": "defect","requestParam": [{"dateRange": {"start":"2023-01-10 00:00:03", "end":"2023-10-23 23:59:58"}, "lot": [],"waferId": {"good": ["NA0085-13","NA0085-24","NA0298-13","NA0300-02","NA0304-11","NA0396-11","NA0396-24","NA0401-13","NA0407-24","NA0411-11"],"bad": ["NA0410-23","NA0697-10","NAS422-04","NAX708-04","NAX708-24"]}}]}
+
+
+删除kafka的topic：
+sh kafka-topics.sh --bootstrap-server 127.0.0.1:9092 --delete --topic mva_query_inline_topic
+
+
+
+
+kafka消息例子1：
+# 真正的kafka消息里全都是双引号
+# json_loads_dict = {
+#     "requestId": "fff",
+#     "requestParam": [
+#         {'dateRange': [{'start': "2023-12-01 00:00:00", 'end': "2024-01-15 00:00:00"}], 
+#          'lot': [], 
+#          'operNo': ["1G.EEG1R","1G.PPB10"], 
+#          'prodg1': [], 
+#          'productId': [], 
+#          'eqp': [], 
+#          'tool': [], 
+#          'recipeName': [], 
+#          'waferId': {'good': ["NBX392-15","NBX392-20","NBX392-24","NBX391-24","NBX391-25",
+# "NBX548-09","NBX391-01","NBX391-02","NBX391-13","NBX391-17"], 
+#                      'bad': ["NBX500-10","NBX500-01","NBX500-09"]}, 
+#          'uploadId': '20240116091053189', 
+#          'mergeProdg1': '0',
+#         #  'mergeOperno': [{"2F.CDS10_XX.TDS01": ["2F.CDS10", "XX.TDS01"]},
+#         #                    {"2F.CDS20_XX.CDS20": ["2F.CDS20", "XX.CDS20"]}]
+#         }
+#     ]
+# }
+
+
+kafka消息例子2：
+json_loads_dict = {
+    "requestId": "fff",
+    "requestParam": [
+        {'dateRange': [{'start': "2023-06-01 14:11:18", 'end': "2023-07-09 03:40:09"}], 
+         'lot': [], 
+         'operNo': ['2F.CDS10',  'XX.TDS01'], 
+         'prodg1': [], 
+         'productId': [], 
+         'eqp': [], 
+         'tool': [], 
+         'recipeName': [], 
+         'waferId': {'good': ['NAZ926-04', 'NAZ926-05', 'NAZ926-10', 'NAZ926-01', 'NAZ748-05',
+       'NAZ748-06', 'NAZ748-07', 'NAZ926-14', 'NFL805-21', 'NAZ748-08',
+       'NAZ758-17', 'NAZ926-11', 'NAZ748-09', 'NAZ748-04', 'NAZ926-02',
+       'NAZ926-03', 'NAZ926-09', 'NAZ926-06', 'NFL805-11', 'NAZ926-08',
+       'NAZ926-15', 'NAZ748-03', 'NAZ860-01', 'NAZ926-07', 'NAZ926-12',
+       'NAZ926-13', 'NGB951-09', 'NGB951-03', 'NGD037-01', 'NGD037-02',
+       'NGB951-04', 'NGD037-03', 'NGD744-01', 'NGD744-03', 'NGD744-14',
+       'NGD744-21', 'NGD040-04', 'NGD040-01', 'NGD040-02', 'NGD040-03',
+       'NGD744-09', 'NGD744-20', 'NGD744-23', 'NGB951-05', 'NGD037-04',
+       'NGB951-07', 'NGB951-10', 'NGB951-06', 'NGD744-18', 'NGD744-16',
+       'NGD744-04', 'NGD744-12', 'NGD744-13', 'NGD744-19', 'NGD744-11',
+       'NGD744-25', 'NGF842-01', 'NGF842-02', 'NGD744-05', 'NGD744-06',
+       'NGD744-07', 'NGD744-10', 'NGD744-24', 'NGD744-02', 'NGF842-09',
+       'NGF842-23', 'NGF842-03', 'NGF842-14', 'NGF977-25', 'NGF989-05',
+       'NGF989-06', 'NGF989-12', 'NGF990-06', 'NGF990-10', 'NGF990-24',
+       'NGF997-15', 'NGF997-16', 'NGG003-09', 'NGG003-21', 'NGG015-01',
+       'NGG016-01', 'NGG016-09', 'NGG016-14', 'NGG016-17', 'NGG016-20',
+       'NGG016-22', 'NGG118-03', 'NGG118-15', 'NGF989-04', 'NGF989-10',
+       'NGF989-19', 'NGF989-24', 'NGF989-25', 'NGF990-04', 'NGF990-11',
+       'NGF990-12', 'NGF990-25', 'NGF997-02', 'NGF997-03', 'NGF997-08',
+       'NGG003-03', 'NGG003-15', 'NGF842-06', 'NGG015-20', 'NGG016-21',
+       'NGG016-23', 'NGG118-01', 'NGG118-20', 'NGF842-25', 'NGF842-07',
+       'NGF989-02', 'NGF989-03', 'NGF989-14', 'NGF989-21', 'NGF989-22',
+       'NGF989-23', 'NGF990-09', 'NGF990-15', 'NGF990-20', 'NGF990-21',
+       'NGF990-22', 'NGF997-06', 'NGF997-13', 'NGF997-18', 'NGF997-25',
+       'NGG015-04', 'NGG015-07', 'NGG015-11', 'NGG015-12', 'NGG016-12',
+       'NGG016-19', 'NGG118-13', 'NGG707-04', 'NGG707-05', 'NGG707-06',
+       'NGG707-10', 'NGG707-11', 'NGG711-24', 'NGG711-25', 'NGG715-16',
+       'NGG717-05', 'NGG717-07', 'NGG718-05', 'NGG718-11', 'NGG718-25',
+       'NGG724-05', 'NGG724-12', 'NGG724-13', 'NGG776-02', 'NGG776-03',
+       'NGG776-17', 'NGG778-04', 'NGG778-11', 'NGF842-13', 'NGF842-18',
+       'NGF977-23', 'NGF990-02', 'NGF990-14', 'NGG003-11', 'NGG015-10',
+       'NGG016-04', 'NGG016-07', 'NGG016-10', 'NGG016-11', 'NGG016-25',
+       'NGG118-04', 'NGG118-06', 'NGG118-11', 'NGG118-12', 'NGG118-19',
+       'NGG707-12', 'NGG707-13', 'NGG715-01', 'NGG715-08', 'NGG715-15',
+       'NGG717-11', 'NGG718-07', 'NGG718-13', 'NGG724-04', 'NGG724-24',
+       'NGG776-15', 'NGG776-16', 'NGG776-22', 'NGG778-18', 'NGG778-25',
+       'NGF842-10', 'NGF842-24', 'NGF842-19', 'NGF842-04', 'NGF842-05',
+       'NGF842-11', 'NGF842-12', 'NGG707-02', 'NGG707-08', 'NGG707-17',
+       'NGG707-21', 'NGG711-17', 'NGG715-04', 'NGG715-10', 'NGG715-12',
+       'NGG717-14', 'NGG717-22', 'NGG717-23', 'NGG718-14', 'NGG718-15',
+       'NGG724-17', 'NGG776-19', 'NGG778-01', 'NGG778-08', 'NGG778-09',
+       'NGG778-20', 'NGF989-09', 'NGF989-20', 'NGF990-03', 'NGF997-11',
+       'NGF997-12', 'NGG003-18', 'NGG015-05', 'NGG015-19', 'NGG118-05',
+       'NGF989-08', 'NGF989-16', 'NGF989-17', 'NGF990-17', 'NGF990-23',
+       'NGF997-24', 'NGG003-05', 'NGG003-10', 'NGG015-18', 'NGG015-24',
+       'NGG016-13', 'NGG016-18', 'NGG016-24', 'NGG118-07', 'NGG118-10',
+       'NGG118-24', 'NGG118-25', 'NGF842-17', 'NGF842-21', 'NGF989-01',
+       'NGF989-15', 'NGF990-01', 'NGF990-08', 'NGF990-16', 'NGF997-04',
+       'NGF997-05', 'NGF997-07', 'NGF997-10', 'NGF997-19', 'NGG707-03',
+       'NGG711-16', 'NGG711-21', 'NGG715-13', 'NGG715-25', 'NGG717-03',
+       'NGG717-09', 'NGG717-21', 'NGG718-02', 'NGG718-03', 'NGG718-09',
+       'NGG718-16', 'NGG718-21', 'NGG776-06', 'NGG003-04', 'NGG003-06',
+       'NGG003-07', 'NGG003-12', 'NGG003-13', 'NGG003-19', 'NGG015-06',
+       'NGG015-13', 'NGG015-25', 'NGG016-05', 'NGG016-06', 'NGG118-18',
+       'NGG776-10', 'NGG776-13', 'NGG776-25', 'NGG778-03', 'NGG778-21',
+       'NGG778-22', 'NGF989-13', 'NGF989-18', 'NGF990-05', 'NGF990-13',
+       'NGF990-18', 'NGF997-17', 'NGF997-23', 'NGG003-16', 'NGG003-17',
+       'NGG003-20', 'NGG016-02', 'NGG016-03', 'NGG016-15', 'NGG118-02',
+       'NGG118-16', 'NGG118-17', 'NGG118-21', 'NGG707-15', 'NGG707-16',
+       'NGG717-02', 'NGG717-17', 'NGG718-17', 'NGG707-01', 'NGG707-14',
+       'NGG707-20', 'NGG707-22', 'NGG711-20', 'NGG711-22', 'NGG715-19',
+       'NGG717-01', 'NGG717-08', 'NGG717-15', 'NGG717-16', 'NGG718-08',
+       'NGG724-01', 'NGG724-03', 'NGG724-15', 'NGG724-23', 'NGF842-08',
+       'NGF842-15', 'NGF842-22', 'NGG718-20', 'NGG718-22', 'NGG724-02',
+       'NGG724-14', 'NGG724-16', 'NGG724-20', 'NGG724-22', 'NGG776-18',
+       'NGG778-16', 'NGG778-23', 'NGG776-05', 'NGG776-11', 'NGG776-12',
+       'NGG776-24', 'NGG778-02', 'NGG707-25', 'NGG707-09', 'NGG707-23',
+       'NGG711-14', 'NGG711-15', 'NGG711-23', 'NGG715-05', 'NGG715-06',
+       'NGG715-07', 'NGG715-11', 'NGF977-24', 'NGF989-07', 'NGF989-11',
+       'NGF990-07', 'NGF990-19', 'NGF997-14', 'NGF997-20', 'NGG003-01',
+       'NGG003-02', 'NGG003-14', 'NGG715-03', 'NGG715-20', 'NGG717-12',
+       'NGG717-19', 'NGG717-24', 'NGG717-25', 'NGG718-10', 'NGG724-07',
+       'NGG724-10', 'NGG776-01', 'NGG776-09', 'NGG776-21', 'NGG778-05',
+       'NGG778-06', 'NGG778-12', 'NGG715-18', 'NGG715-24', 'NGG717-20',
+       'NGG718-01', 'NGG718-23', 'NGG724-08', 'NGG724-09', 'NGG724-21',
+       'NGG776-04', 'NGG776-07', 'NGG778-14', 'NGG778-15', 'NGG778-17',
+       'NGG003-22', 'NGG015-02', 'NGG015-03', 'NGG015-15', 'NGG015-16',
+       'NGG015-17', 'NGG015-22', 'NGG016-08', 'NGG118-09', 'NGG707-07',
+       'NGG707-24', 'NGG711-18', 'NGG711-19', 'NGG715-14', 'NGG715-17',
+       'NGG715-22', 'NGG715-23', 'NGG717-04', 'NGG717-10', 'NGG718-04',
+       'NGG718-06', 'NGG718-12', 'NGG718-19', 'NGG718-24', 'NGG724-06',
+       'NGG724-11', 'NGG724-18', 'NGG776-08', 'NGG776-14', 'NGG776-23',
+       'NGG778-19', 'NGB951-08', 'NGD744-08', 'NGD744-15', 'NGD744-17',
+       'NGD744-22', 'NGF842-16', 'NGF842-20', 'NGF997-01', 'NGF997-09',
+       'NGF997-21', 'NGF997-22', 'NGG003-08', 'NGG015-08', 'NGG015-09',
+       'NGG015-14', 'NGG015-21', 'NGG015-23', 'NGG016-16', 'NGG118-08',
+       'NGG118-14', 'NGG118-22', 'NGG118-23', 'NGG707-18', 'NGG707-19',
+       'NGG711-13', 'NGG715-02', 'NGG715-09', 'NGG715-21', 'NGG717-06',
+       'NGG717-13', 'NGG717-18', 'NGG718-18', 'NGG724-19', 'NGG724-25',
+       'NGG776-20', 'NGG778-07', 'NGG778-10', 'NGG778-13', 'NGG778-24'], 
+
+       'bad': ['NAZ675-03', 'NAZ675-02', 'NGF828-16', 'NGF828-17', 'NGF828-22',
+       'NGF829-06', 'NGF829-10', 'NGF829-13', 'NGF829-24', 'NGF844-15',
+       'NGF844-17', 'NGF844-23', 'NGG184-10', 'NGG184-12', 'NGG184-18',
+       'NGF828-12', 'NGF828-13', 'NGF828-25', 'NGF829-17', 'NGG184-19',
+       'NGG186-22', 'NGG190-22', 'NGG191-11', 'NGG191-18', 'NGG191-19',
+       'NGG201-01', 'NGG201-09', 'NGG186-09', 'NGG186-15', 'NGG190-21',
+       'NGG191-07', 'NGG201-03', 'NGG201-14', 'NGG201-17', 'NGG201-21',
+       'NGF844-10', 'NGF844-11', 'NGF844-18', 'NGG401-05', 'NGG401-12',
+       'NGG401-13', 'NGG402-05', 'NGG402-19', 'NGF828-10', 'NGF828-18',
+       'NGF828-19', 'NGF829-01', 'NGF829-21', 'NGF829-23', 'NGG401-04',
+       'NGG184-03', 'NGG186-07', 'NGF844-19', 'NGF844-25', 'NGG401-06',
+       'NGG401-07', 'NGG402-06', 'NGG402-12', 'NGG402-24', 'NGG186-25',
+       'NGG191-16', 'NGG201-10', 'NGG201-11', 'NGG201-13', 'NGG201-25',
+       'NGG401-08', 'NGG401-14', 'NGF828-11', 'NGF828-24', 'NGF829-02',
+       'NGF828-04', 'NGF828-05', 'NGF828-07', 'NGF829-03', 'NGF828-06',
+       'NGG184-01', 'NGG184-14', 'NGG184-22', 'NGG186-04', 'NGG186-11',
+       'NGG186-13', 'NGG186-24', 'NGG401-16', 'NGG401-21', 'NGG401-22',
+       'NGG402-08', 'NGG402-09', 'NGF829-14', 'NGF829-20', 'NGF829-22',
+       'NGF844-04', 'NGF844-06', 'NGF844-12', 'NGF829-16', 'NGF844-13',
+       'NGF844-24', 'NGF829-08', 'NGF829-09', 'NGF829-15', 'NGF844-05',
+       'NGF844-07', 'NGG190-12', 'NGG190-13', 'NGG191-21', 'NGG201-04',
+       'NGG201-07', 'NGG201-19', 'NGG184-08', 'NGG184-09', 'NGG003-25',
+       'NGG184-15', 'NGG184-17', 'NGF828-01', 'NGF829-11', 'NGF829-18',
+       'NGF844-01', 'NGF844-02', 'NGF844-08', 'NGG401-17', 'NGG184-16',
+       'NGG184-20', 'NGG184-23', 'NGG186-05', 'NGG186-10', 'NGG190-04',
+       'NGG191-02', 'NGG191-17', 'NGG201-05', 'NGG186-06', 'NGG190-11',
+       'NGG191-01', 'NGG191-09', 'NGG191-14', 'NGG191-15', 'NGG191-20',
+       'NGG201-06', 'NGF844-14', 'NGF844-16', 'NGF844-21', 'NGG003-24',
+       'NGG184-02', 'NGG401-20', 'NGG401-01', 'NGG401-02', 'NGG401-15',
+       'NGG184-04', 'NGG186-01', 'NGG184-21', 'NGG186-12', 'NGG186-18',
+       'NGG186-19', 'NGG191-03', 'NGG191-08', 'NGG191-22', 'NGG191-23',
+       'NGF828-02', 'NGF828-14', 'NGF828-20', 'NGF828-21', 'NGF828-23',
+       'NGF829-04', 'NGF829-07', 'NGF829-12', 'NGF829-19', 'NGG402-01',
+       'NGG402-03', 'NGG402-15', 'NGG402-16', 'NGG401-23', 'NGG402-14',
+       'NGG402-20', 'NGG402-22', 'NGG402-23', 'NGG186-08', 'NGG186-14',
+       'NGG186-23', 'NGG190-02', 'NGG191-25', 'NGG201-16', 'NGG201-22',
+       'NGG201-23', 'NGG201-12', 'NGG201-18', 'NGG201-24', 'NGG401-03',
+       'NGF829-25', 'NGF844-03', 'NGF844-09', 'NGF844-20', 'NGG401-11',
+       'NGG401-19', 'NGG402-10', 'NGG401-09', 'NGG402-02', 'NGG402-17',
+       'NGG402-21', 'NGG003-23', 'NGG184-05', 'NGG184-07', 'NGG184-24',
+       'NGG184-25', 'NGG186-16', 'NGG186-17', 'NGG191-06', 'NGG191-10',
+       'NGG191-13', 'NGG191-24', 'NGG201-02', 'NGG401-10', 'NGG402-11',
+       'NGG402-13', 'NGG402-18', 'NGF828-03', 'NGF828-08', 'NGF828-09',
+       'NGF828-15', 'NGF829-05', 'NGG184-06', 'NGG184-11', 'NGG184-13',
+       'NGG186-02', 'NGG186-03', 'NGG186-20', 'NGG186-21', 'NGG190-03',
+       'NGG190-23', 'NGG191-04', 'NGG191-05', 'NGG191-12', 'NGG201-08',
+       'NGG201-15', 'NGG201-20', 'NGG401-18', 'NGG401-24', 'NGG401-25',
+       'NGG402-04', 'NGG402-07', 'NGG402-25']}, 
+         'uploadId': '20231226131154711', 
+         'mergeProdg1': '0',
+         'mergeOperno': [{"2F.CDS10_XX.TDS01": ["2F.CDS10", "XX.TDS01"]},
+                           {"2F.CDS20_XX.CDS20": ["2F.CDS20", "XX.CDS20"]}]
+        }
+    ]
+}
+
+
+
+
+
+
+

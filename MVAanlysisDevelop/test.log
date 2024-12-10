@@ -1,0 +1,7 @@
+04-34-2024 14:34:56 root:INFO:Assigning task1(TypeA) to equipment1(TypeA).
+04-34-2024 14:34:56 root:INFO:Equipment2(TypeA) is busy. Cannot assign task2(TypeA) to equipment2(TypeA)
+04-34-2024 14:34:56 root:INFO:Equipment1(TypeA) is busy. Cannot assign task3(TypeA) to equipment1(TypeA)
+04-34-2024 14:34:56 root:INFO:Equipment1(TypeA) has completed the task1(TypeA).
+04-34-2024 14:34:56 root:INFO:Assigning task3(TypeA) to equipment1(TypeA).
+04-34-2024 14:34:56 root:INFO:Equipment2(TypeA) is busy. Cannot assign task4(TypeB) to equipment2(TypeA)
+04-34-2024 14:34:56 root:INFO:Equipment1(TypeB) is busy. Cannot assign task5(TypeB) to equipment1(TypeB)

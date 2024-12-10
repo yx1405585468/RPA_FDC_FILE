@@ -1,0 +1,17 @@
+CASE1: 2023-06-16 00:00:09	2023-06-30 23:54:20
+L11CD02A      1F.EEK10        EKT72_PM1      good:234     bad:725
+L15RB03A       1F.EEK10        EKT72_PM1      good:75     bad:75
+
+
+
+CASE2: 2023-06-01 00:11:19       2023-07-10 20:27:11
+C90WA12A     2F.CDS10    DSA02_B     good:47     bad:139
+C90WA15A     2F.CDS10     DSA02_B    good:8     bad:25
+C90WA20A     2F.CDS10      DSA02_B   good:25     bad:24
+
+
+
+CASE3:  2023-08-01 01:59:52	2023-09-07 23:33:26
+L15DM02A     1F.CDS10        DSA10_C       good: 8            bad:39
+L90RB15A       1F.CDS10        DSA10_C       good:45           bad:25
+L15EG02A       1F.CDS10        DSA10_C      good:42           bad:21
