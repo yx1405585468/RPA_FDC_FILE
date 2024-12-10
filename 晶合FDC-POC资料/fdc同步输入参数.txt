@@ -1,0 +1,69 @@
+doris数据源IP
+192.168.12.39:9030
+
+http端口
+8030
+
+mysql端口
+9030
+
+数据源用户名称
+root
+
+数据源密码
+123456
+
+数据库名称
+fdc_analysis
+
+表名realtime，process
+
+
+select EB_Voltage, EB_Current, Chm_IG, CRYO_Temp, CRTM_Status, THK, FREQ, Rate, Power, Jig_Roll_Speed, TEMP1, TEMP2, TEMP3, TEMP4, EB, CRYO2_Temp, 
+Crystal, CRTM_Sensor, EB_water_flow, ProcessSeqNo, Layer from fdc_analysis.realtime rl
+inner join 
+	(select SeqNo, ProcessName from fdc_analysis.process 
+	where 
+  ProcessName = '${ProcessName}'
+  and StartTime > '${startTime}'
+	and StartTime < '${endTime}'
+	and EndTime > '${startTime}'
+	and EndTime < '${endTime}'
+	) res
+on rl.ProcessSeqNo = res.SeqNo
+
+
+import pyspark.pandas as ps
+from pyspark.sql.functions import col
+df1 = df1.withColumn("Layer", col('Layer').cast('string'))
+df1 = df1.pandas_api()
+df1.columns = df1.columns.str.replace("_",  "#")
+df1 = df1.to_spark()
+
+
+对Layer重新编号：
+import pyspark.pandas as ps
+df1 = df1.toPandas()
+df1 = df1.sort_values(by=['ProcessSeqNo', 'Layer'], ascending=True)
+
+for num in df1["ProcessSeqNo"].unique():
+    df_len = len(df1.loc[df1['ProcessSeqNo'] == num])
+    df1.loc[df1['ProcessSeqNo'] == num, "Layer"] = [i for i in range(1, df_len+1)] 
+
+
+df1 = ps.from_pandas(df1).to_spark()
+
+
+
+CREATE TABLE `pca_raw_data_results`(
+	`feature_name` varchar(500) NULL COMMENT "",
+	`type` INT NULL COMMENT "",
+	`pca_features_1` DOUBLE NULL COMMENT "",
+	`pca_features_2` DOUBLE NULL COMMENT "",
+	`pca_features_3` DOUBLE NULL COMMENT "",
+	`pca_features_4` DOUBLE NULL COMMENT ""
+	)
+DISTRIBUTED BY HASH(`type`) BUCKETS 1
+PROPERTIES (
+"replication_allocation" = "tag.location.default: 1"
+);
