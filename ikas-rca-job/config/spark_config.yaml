@@ -1,0 +1,58 @@
+# Spark应用程序的配置
+spark:
+  # 应用程序名称
+  app_name: "MySparkApp"
+
+  # 执行模式，可以是 "local"（本地模式）或 "yarn"（分布式模式）
+  execution_mode: "yarn"
+
+  # Spark主节点的URL（仅在执行模式为 "yarn" 时有效）
+  master_url: "yarn"
+
+  # 配置Spark应用程序的资源
+  resources:
+    # Executor内存大小
+    executor_memory: "2g"
+
+    # Executor核心数
+    executor_cores: 4
+
+    # Driver内存大小
+    driver_memory: "1g"
+
+    # 设置Executor实例数量
+    num_executors: 3
+
+    # 设置Executor内存分配的Overhead
+    executor_memory_overhead: "512m"
+
+    # 设置Driver内存分配的Overhead
+    driver_memory_overhead: "512m"
+
+    # 配置Spark任务的shuffle部分的内存占比
+    shuffle_memory_fraction: 0.2
+
+    # 配置Spark任务的缓存部分的内存占比
+    storage_memory_fraction: 0.2
+
+# 日志配置
+logging:
+  # Spark应用程序的日志级别
+  spark_log_level: "INFO"
+
+# Hive配置（如果使用Hive）
+doris:
+  # Hive元数据仓库的连接URL
+  metastore_uri: "thrift://hive-metastore:9083"
+
+  # 使用的Hive版本
+  hive_version: "2.3.8"
+
+  # 配置Hive表的存储格式
+  hive_table_format: "parquet"
+
+# 其他配置项
+other:
+  # 其他应用程序特定的配置项
+  key1: "value1"
+  key2: "value2"

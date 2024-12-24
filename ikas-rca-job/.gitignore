@@ -2,3 +2,4 @@
 .venv
 .idea/
 *.csv
+/src/algo_config.py
