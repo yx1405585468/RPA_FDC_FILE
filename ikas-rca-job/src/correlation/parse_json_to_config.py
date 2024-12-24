@@ -39,7 +39,8 @@ class ParseAlgorithmJsonConfig:
                 "uva": {},
                 "wat": {},
                 "inline": {},
-                "process": {}
+                "process": {},
+                "qtime": {}
             }
 
             # 解析uva配置
@@ -61,6 +62,11 @@ class ParseAlgorithmJsonConfig:
             if "process" in data.get("requestParam", {}):
                 process_config = data["requestParam"]["process"]
                 results["process"] = ParseAlgorithmJsonConfig.parse_process_config(process_config, data)
+
+            # 解析qtime配置
+            if "qtime" in data.get("requestParam", {}):
+                qtime_config = data["requestParam"]["qtime"]
+                results["qtime"] = ParseAlgorithmJsonConfig.parse_qtime_config(qtime_config, data)
             return results
 
         except json.JSONDecodeError as e:
@@ -138,25 +144,26 @@ class ParseAlgorithmJsonConfig:
         :param data: 完整的数据字典
         :return: 解析后的wat配置信息字典
         """
-        group_by_list, merge_prodg1, merge_product, merge_eqp, merge_chamber, merge_operno = ParseAlgorithmJsonConfig.get_merge_list(
+        group_by_list, merge_prodg1, merge_product, merge_eqp, merge_chamber, merge_operno,  merge_parametric_name= ParseAlgorithmJsonConfig.get_merge_list(
             config, 'groupByList'), ParseAlgorithmJsonConfig.get_merge_list(config,
                                                                             'mergeProdg1'), ParseAlgorithmJsonConfig.get_merge_list(
             config, 'mergeProductId'), ParseAlgorithmJsonConfig.get_merge_list(config,
                                                                                'mergeEqp'), ParseAlgorithmJsonConfig.get_merge_list(
             config, 'mergeChamber'), ParseAlgorithmJsonConfig.get_merge_list(config,
-                                                                             'mergeOperno')
+                                                                             'mergeOperno'), ParseAlgorithmJsonConfig.get_merge_list(
+            config, 'mergeParametricName'), 
         if group_by_list is None or len(group_by_list) == 0:
-            group_by_list = ["PRODG1", "PRODUCT_ID"]
+            group_by_list = ["PRODG1", "PRODUCT_ID", "OPE_NO"]
             flag_merge_prodg1 = data.get("requestParam").get('flagMergeAllProdg1')
             flag_merge_product_id = data.get("requestParam").get('flagMergeAllProductId')
 
             if flag_merge_prodg1 == '1':
                 merge_prodg1 = None
                 merge_product = None
-                group_by_list = []
+                group_by_list = ["OPE_NO"]
             elif flag_merge_product_id == '1':
                 merge_product = None
-                group_by_list = ["PRODG1"]
+                group_by_list = ["PRODG1", "OPE_NO"]
 
         return {
             "group_by_list": group_by_list,
@@ -164,7 +171,8 @@ class ParseAlgorithmJsonConfig:
             "merge_product_list": merge_product,
             "merge_eqp_list": merge_eqp,
             "merge_chamber_list": merge_chamber,
-            "merge_operno_list": merge_operno
+            "merge_operno_list": merge_operno,
+            "merge_parametric_name_list": merge_parametric_name
         }
 
     @staticmethod
@@ -232,7 +240,7 @@ class ParseAlgorithmJsonConfig:
                 merge_product = None
                 group_by_list = ["EQP_NAME", 'CHAMBER_NAME']
                 if flag_merge_chamber == '1':
-                    group_by_list = [ "EQP_NAME"]
+                    group_by_list = ["EQP_NAME"]
             elif flag_merge_product_id == '1':
                 merge_product = None
                 group_by_list = ["PRODG1", "EQP_NAME", "CHAMBER_NAME"]
@@ -250,6 +258,65 @@ class ParseAlgorithmJsonConfig:
             "merge_chamber_list": merge_chamber,
             "merge_operno_list": merge_operno
         }
+
+    @staticmethod
+    def parse_qtime_config(config: Dict[str, any], data: Dict[str, any]) -> Dict[str, any]:
+        """
+        解析process配置
+
+        :param config: wat配置字典
+        :param data: 完整的数据字典
+        :return: 解析后的wat配置信息字典
+        """
+        group_by_list, merge_prodg1, merge_product, merge_eqp, merge_chamber, merge_operno = ParseAlgorithmJsonConfig.get_merge_list(
+            config, 'groupByList'), ParseAlgorithmJsonConfig.get_merge_list(config,
+                                                                            'mergeProdg1'), ParseAlgorithmJsonConfig.get_merge_list(
+            config, 'mergeProductId'), ParseAlgorithmJsonConfig.get_merge_list(config,
+                                                                               'mergeEqp'), ParseAlgorithmJsonConfig.get_merge_list(
+            config, 'mergeChamber'), ParseAlgorithmJsonConfig.get_merge_list(config,
+                                                                             'mergeOperno')
+        if group_by_list is None or len(group_by_list) == 0:
+            group_by_list = ["PRODG1", "PRODUCT_ID", "OPE_NO"]
+            flag_merge_prodg1 = data.get("requestParam").get('flagMergeAllProdg1')
+            flag_merge_product_id = data.get("requestParam").get('flagMergeAllProductId')
+            if flag_merge_prodg1 == '1':
+                group_by_list = ["OPE_NO"]
+            elif flag_merge_product_id == '1':
+                    group_by_list = ["PRODG1","OPE_NO"]
+
+        return {
+            "group_by_list": group_by_list,
+            "merge_prodg1_list": merge_prodg1,
+            "merge_product_list": merge_product,
+            "merge_eqp_list": merge_eqp,
+            "merge_chamber_list": merge_chamber,
+            "merge_operno_list": merge_operno
+        }
+
+
+    @staticmethod
+    def merge_mode_info(source_dict: dict, target_dict: dict) -> dict:
+        """
+        将源字典中的 mode_info 合并到目标字典中。
+
+        :param source_dict: 包含 mode_info 的字典
+        :param target_dict: 目标字典，mode_info 将被合并到此字典中
+        :return: 合并后的目标字典
+        """
+        # 遍历 source_dict 中的 mode_info
+        for algorithm, mode_data in source_dict['mode_info'].items():
+            algorithm = algorithm.lower()
+            if algorithm in target_dict:
+                # 确保目标字典中的算法字典存在，并添加 mode_info
+                if isinstance(target_dict[algorithm], dict):
+                    target_dict[algorithm]['mode_info'] = mode_data
+                else:
+                    # 如果目标字典中的算法项不是字典，则覆盖为包含 mode_info 的字典
+                    target_dict[algorithm] = {'mode_info': mode_data}
+            else:
+                # 如果算法在目标字典中不存在，创建该算法字典并添加 mode_info
+                target_dict[algorithm] = {'mode_info': mode_data}
+        return target_dict
 
 
 if __name__ == '__main__':

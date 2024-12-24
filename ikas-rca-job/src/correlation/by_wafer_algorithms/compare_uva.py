@@ -189,6 +189,7 @@ class CorrCompareUvaByWaferAlgorithm(PreprocessForUvaData, ProcessBaseDFByWAFER,
                                                 merge_eqp_list=merge_eqp_list,
                                                 merge_chamber_list=merge_chamber_list
                                                 )
+        df_processed.persist()  # 缓存数据集
 
         # by eqp: 一个parameter 会存在重复的parameter name , RESULT
         df_processed = df_processed.groupby(*(group_by_list + ['PARAMETRIC_NAME', "WAFER_ID"])).agg(
@@ -204,13 +205,13 @@ class CorrCompareUvaByWaferAlgorithm(PreprocessForUvaData, ProcessBaseDFByWAFER,
             count(when((col('RESULT').isNotNull()) & (col(outlier_parametric_name).isNotNull()), 1)).alias("COUNT"),
         )
         count_df = count_df.filter(col("COUNT") > 0)
-
+        count_df.persist()  # 缓存数据集
         if count_df.count() == 0:
             # 过滤后数据，为空
             return None
 
         result = result.join(count_df, on=group_by_list + ["PARAMETRIC_NAME"], how='left')
-
+        result.persist()  # 缓存数据集
         # finish : 验证Count 数目，验证通过
         # result_pandas = result.toPandas()
         # for name, group in result_pandas.groupby((group_by_list + ["PARAMETRIC_NAME"])):
@@ -239,7 +240,9 @@ class CorrCompareUvaByWaferAlgorithm(PreprocessForUvaData, ProcessBaseDFByWAFER,
                   # .transform(PrePareResultTableToCommonSchema.run) # 放到MergeAllDataSourceToResultTable 统一处理
                   # .orderBy(col("WEIGHT").desc()) # 放在各模块合并后的结果处理中
                   )
-
+        df_processed.unpersist()  # 释放不再使用的数据集
+        count_df.unpersist()  # 释放不再使用的数据集
+        result.unpersist()  # 释放不再使用的数据集
         return result
 
 if __name__ == "__main__":

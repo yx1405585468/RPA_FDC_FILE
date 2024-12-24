@@ -25,7 +25,8 @@ class DataPreprocessorForWat:
                  convert_to_numeric_list: list[str],
                  merge_operno_list: List[Dict[str, List[str]]],
                  merge_prodg1_list: List[Dict[str, List[str]]],
-                 merge_product_list: List[Dict[str, List[str]]]
+                 merge_product_list: List[Dict[str, List[str]]],
+                 merge_parametric_name_list: List[Dict[str, List[str]]]
                  ):
         self.df = df
         self.grpby_list = grpby_list
@@ -34,6 +35,7 @@ class DataPreprocessorForWat:
         self.merge_operno_list = merge_operno_list
         self.merge_prodg1_list = merge_prodg1_list
         self.merge_product_list = merge_product_list
+        self.merge_parametric_name_list = merge_parametric_name_list
 
     @staticmethod
     def select_columns(df: pyspark.sql.dataframe, columns_list: list[str]) -> pyspark.sql.dataframe:
@@ -59,7 +61,8 @@ class DataPreprocessorForWat:
     def integrate_columns(df: pyspark.sql.dataframe,
                           merge_operno_list: List[Dict[str, List[str]]],
                           merge_prodg1_list: List[Dict[str, List[str]]],
-                          merge_product_list: List[Dict[str, List[str]]]) -> pyspark.sql.dataframe:
+                          merge_product_list: List[Dict[str, List[str]]],
+                          merge_parametric_name_list: List[Dict[str, List[str]]]) -> pyspark.sql.dataframe:
         """
         Integrate columns in the DataFrame based on the provided list.
 
@@ -75,6 +78,7 @@ class DataPreprocessorForWat:
         df_merged = DataPreprocessorForWat.integrate_single_column(df, merge_operno_list, 'OPE_NO')
         df_merged = DataPreprocessorForWat.integrate_single_column(df_merged, merge_prodg1_list, 'PRODG1')
         df_merged = DataPreprocessorForWat.integrate_single_column(df_merged, merge_product_list, 'PRODUCT_ID')
+        df_merged = DataPreprocessorForWat.integrate_single_column(df_merged, merge_parametric_name_list, 'PARAMETRIC_NAME')
         return df_merged
 
     @staticmethod
@@ -121,7 +125,8 @@ class DataPreprocessorForWat:
         df_integrate = self.integrate_columns(df=df_select,
                                               merge_operno_list=self.merge_operno_list,
                                               merge_prodg1_list=self.merge_prodg1_list,
-                                              merge_product_list=self.merge_product_list)
+                                              merge_product_list=self.merge_product_list,
+                                              merge_parametric_name_list=self.merge_parametric_name_list)
         add_parametric_stats_df = self.add_feature_stats_within_groups(df_integrate=df_integrate, grpby_list=self.grpby_list)
         df_preprocess = self.pre_process(df=df_integrate, convert_to_numeric_list=self.convert_to_numeric_list)
         return add_parametric_stats_df, df_preprocess
@@ -548,6 +553,7 @@ class ExertWatByWafer:
                            merge_operno_list: List[Dict[str, List[str]]],
                            merge_prodg1_list: List[Dict[str, List[str]]],
                            merge_product_list: List[Dict[str, List[str]]],
+                           merge_parametric_name_list: List[Dict[str, List[str]]],
                            columns_list=None,
                            convert_to_numeric_list=None,
                            grpby_list=None):
@@ -568,7 +574,8 @@ class ExertWatByWafer:
                                                                         convert_to_numeric_list=convert_to_numeric_list,
                                                                         merge_operno_list=merge_operno_list,
                                                                         merge_prodg1_list=merge_prodg1_list,
-                                                                        merge_product_list=merge_product_list).run()
+                                                                        merge_product_list=merge_product_list,
+                                                                        merge_parametric_name_list=merge_parametric_name_list).run()
         if df_preprocess.isEmpty():
             msg = '数据库中暂无数据.'
             raise RCABaseException(msg)

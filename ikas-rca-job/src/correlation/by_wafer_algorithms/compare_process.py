@@ -3,6 +3,7 @@
 compare with go through time(Process) ,by wafer 算法
 """
 import pyspark
+from pyspark import StorageLevel
 from pyspark.sql.functions import count
 import pandas as pd
 from src.correlation.common_process.data_preprocessing import ProcessBaseDFByWAFER, MergeOneColumnMultiValuesIntoNewOne
@@ -78,6 +79,9 @@ class CorrCompareProcessByWaferAlgorithm:
 
        # group by list 至少里面还有 EQP_NAME 或者 (EQP_NAME, CHAMBER_NAME)) 才能进行group by
        count_df = source_df.groupBy(group_by_list+["WAFER_ID"]).agg(count('WAFER_ID').alias("WAFER_COUNT"))
+       count_df.persist(StorageLevel.MEMORY_AND_DISK)
+       source_df.unpersist()
+
        result = (count_df
                  .join(base_df, on=["WAFER_ID"], how="left")
                  .dropna(subset=['WAFER_COUNT', base_col], how='any') #  去除wafer id两边计数存在至少一个为空的情况
@@ -91,7 +95,8 @@ class CorrCompareProcessByWaferAlgorithm:
                  .withColumn("ANALYSIS_NAME", lit("PROCESS"))  # 赋值分析类型
 
                  )
-
+       result.persist(StorageLevel.MEMORY_AND_DISK)
+       count_df.unpersist()
        return result
 
 

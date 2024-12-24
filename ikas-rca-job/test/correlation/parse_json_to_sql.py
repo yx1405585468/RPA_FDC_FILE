@@ -79,7 +79,8 @@ class ParseSqlQueryConfigTest:
         # value_col = "MIN_VAL" if data_type == "MIN" else "MAX_VAL"
 
         # 生成基础 SQL 查询
-        base_sql_query = ParseSqlQueryConfigTest.generate_base_sql_query(analysis_type.lower(), anomaly_params, data_type,
+        base_sql_query = ParseSqlQueryConfigTest.generate_base_sql_query(analysis_type.lower(), anomaly_params,
+                                                                         data_type,
                                                                          start_date,
                                                                          end_date).strip().rstrip()
         if not base_sql_query:
@@ -100,12 +101,12 @@ class ParseSqlQueryConfigTest:
                                                               end_date=end_date,
                                                               selected_fields=uva_select_fields),
             "inline": ParseSqlQueryConfigTest.generate_sql_query(request_param, "inline",
-                                                             "DWD_INLINE_WAFER_SUMMARY",
-                                                             "MEASURE_TIME", start_date, end_date,
+                                                                 "DWD_INLINE_WAFER_SUMMARY",
+                                                                 "MEASURE_TIME", start_date, end_date,
                                                                  selected_fields=inline_select_fields),
             "wat": ParseSqlQueryConfigTest.generate_sql_query(request_param, "wat",
-                                                          "DWD_WAT_WAFER_SUMMARY d1",
-                                                          "MEASURE_TIME", start_date,
+                                                              "DWD_WAT_WAFER_SUMMARY d1",
+                                                              "MEASURE_TIME", start_date,
                                                               end_date,
                                                               selected_fields=wat_select_fields)
         }
@@ -280,8 +281,8 @@ if __name__ == '__main__':
             "data_type": ""
         },
         "uploadId": "7d8217f70e6a4f2c86e0dbcb328a5244",
-        "prodg1": [],
-        "productId": [],
+        "prodg1": ["p1","p2"],
+        "productId": ["pro1","pro2"],
         "flagMergeAllProdg1": "0",
         "flagMergeAllProductId": "0",
         "uva": {

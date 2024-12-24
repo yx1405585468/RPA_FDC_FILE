@@ -7,6 +7,7 @@ import pandas as pd
 from src.correlation.common_process.data_preprocessing import MergeAllDataSourceToResultTable
 
 
+
 class CorrCompareBySiteAlgorithm(object):
     algo_dispatch_map = {
 
@@ -118,7 +119,7 @@ if __name__ == '__main__':
     def test_single_inline(spark):
 
         df_pandas = pd.read_csv(
-            r"D:\xxs_project\2024\RCA根因分析\test_data\inline_case5_label_1.csv")
+            r"D:\项目\rca\test_data\inline_case5_label_1.csv")
 
         # 异常表征 df,from uva  => compare inline
         base_df = df_pandas.query("OPE_NO == '1F.FQE10' and PARAMETRIC_NAME == 'FDS1'")
@@ -196,7 +197,7 @@ if __name__ == '__main__':
 
         start = time.time()
         df_pandas = pd.read_csv(
-            r"D:\xxs_project\2024\RCA根因分析\test_data\wat_select.csv")
+            r"D:\项目\rca\test_data\wat_select.csv")
         # df_pandas = df_pandas[df_pandas['PRODUCT_ID'].isin(
         #     ["AEMNRM01N.0B01", "AEMNE801N.0B01", "AFXNE001N.0C01", "AGKNCE01N.0A01", "AFXNJ701N.0B01"])]
         # df_pandas = df_pandas[df_pandas['PRODUCT_ID'].isin(["AEMNRM01N.0B01", "AEMNE801N.0B01"])]

@@ -1,14 +1,12 @@
 """
 异常表征数据 与 inline 数据 by site 关系检测算法
 """
-from sklearn.linear_model import LinearRegression
-from sklearn.model_selection import cross_val_score
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import PolynomialFeatures
-# from src.correlation.common_process.data_preprocessing import (PrePareResultTableToCommonSchema,
-#                                                                ProcessBaseDFBySite)
+from pyspark import StorageLevel
 
-# from src.correlation.common_process.corr_base_alogrithm import CorrelationDetectAlgorithm
+from src.correlation.common_process.data_preprocessing import (PrePareResultTableToCommonSchema,
+                                                               ProcessBaseDFBySite)
+
+from src.correlation.common_process.corr_base_alogrithm import CorrelationDetectAlgorithm
 
 import numpy as np
 from typing import Callable
@@ -18,323 +16,18 @@ from typing import List, Dict, Optional
 from pyspark.sql.functions import max, countDistinct, when, lit, pandas_udf, PandasUDFType, monotonically_increasing_id, \
     split, collect_set, concat_ws, col, count, countDistinct, udf, mean, stddev, min, percentile_approx
 from pyspark.sql.types import StringType, IntegerType, DoubleType, StructType, StructField, FloatType
-# from src.exceptions.rca_base_exception import RCABaseException
+from src.exceptions.rca_base_exception import RCABaseException
 import pandas as pd
 from functools import partial, reduce
 
 from pyspark.sql import SparkSession
 
-# from src.correlation.by_wafer_algorithms.compare_inline import PreprocessForInlineData
+from src.correlation.by_wafer_algorithms.compare_inline import PreprocessForInlineData
 import logging
 
-R2_THRESHOLD = 0.0  # R2 阈值，超过阈值，返回r2,没超过返回0.
 # 设置日志级别和输出
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-
-def algo_detect_relation(x: pd.Series, y: pd.Series, r2_threshold: float, is_cv=True) -> float:
-    """
-    检测两组异源数据是否存在关系,使用机器学习模型。
-    """
-    try:
-        # 传进来的数据类型为Decimal 需要转为float, 不然，不能直接相加
-        x = x.astype(float)
-        y = y.astype(float)
-
-    except ValueError:
-        # 存在非数字类型字符串‘123ab‘，需要转为float,'123abc'不能转为数字类型的需要置为Nan
-        x = pd.to_numeric(x, errors='coerce')
-        y = pd.to_numeric(y, errors='coerce')
-
-    # 拼接去除缺失值
-    small_df = pd.DataFrame({"x": x, "y": y}).dropna()
-
-    #  判断x, y 两列 是否存在一列全是一个值，方差为 0.
-    if small_df['x'].nunique() == 1 or small_df['y'].nunique() == 1:
-        return 0.0
-
-    count = len(small_df)
-    if count < 3:
-        # count 取 0 x,y 同时不为空的一行也没有
-        # count 取1 x,y同时不为空的行只有1，结果不可信
-        return 0.0
-    else:
-        # 计算所有关系中的最大r2
-        r2_max = 0.0
-
-        for func_name, func in DETECT_CORRELATION_ML_FUNC_MAP.items():
-            r2 = func(small_df['x'].values, small_df['y'].values, is_cv=is_cv)
-            # print(f"func_name: {func_name}, r2: {r2}")
-            # 选出最大的r2
-            if r2 > r2_max:
-                r2_max = r2
-
-        # logger.info(f"r2_max: {r2_max}")
-        # 确定r2 在 0-1 范围内
-        if r2_max < 0 or r2_max > 1:
-            return 0.0
-        # 根据r2判段关系是否在设定关系中
-        if r2_max >= r2_threshold:
-            # 关系在DETECT_CORRELATION_FUNC_MAP之中
-            return r2_max
-        else:
-            # 关系不在DETECT_CORRELATION_FUNC_MAP之中， 置为0.
-            return 0.0
-
-
-def get_cv_fold(num_samples: int) -> int:
-    """
-    根据样本数量，计算交叉验证的折数
-    """
-    if num_samples == 3:
-        return 1
-    elif num_samples == 4 or num_samples == 5:
-        # 3 个样本，但是，验证集r2计算需要两个样本
-        return 2
-    elif num_samples <= 21:
-        return 3
-    else:
-        return 5
-
-
-def check_linear_relationship_with_ml(X, y, fit_intercept=True, is_cv=True):
-    """
-    测试X和y之间是否存在线性关系
-    """
-
-    model = LinearRegression(fit_intercept=fit_intercept)
-    if is_cv:
-        cv = get_cv_fold(num_samples=len(y))
-        model = LinearRegression(fit_intercept=fit_intercept)
-        if cv > 1:
-            # logger.info(f'cv fold: {cv}')
-
-            scores = cross_val_score(model, X.reshape(-1, 1), y, cv=cv, scoring='r2')  # 假设X是一维数组
-            mean_score = np.mean(scores)
-        else:
-            # cv ==1,只有三个样本，
-            model.fit(X.reshape(-1, 1)[:1], y[:1])
-            mean_score = r2_score(y[1:], model.predict(X.reshape(-1, 1)[1:]))
-    else:
-        model.fit(X.reshape(-1, 1), y)
-        mean_score = r2_score(y, model.predict(X.reshape(-1, 1)))
-    return mean_score  # 假设R^2大于0.8表示存在线性关系
-
-
-def check_quadratic_relationship_with_ml(X, y, fit_intercept=True, is_cv=True):
-    """
-    测试X和y之间是否存在平方关系
-    """
-
-    # logger.info(f"num_samples : {len(y)} cv fold:{cv}")
-    model = make_pipeline(PolynomialFeatures(2), LinearRegression(fit_intercept=fit_intercept))  # 平方特征
-    if is_cv:
-        cv = get_cv_fold(num_samples=len(y))
-        if cv > 1:
-            scores = cross_val_score(model, X.reshape(-1, 1), y, cv=cv, scoring='r2')
-            mean_score = np.mean(scores)
-        else:
-            # cv ==1,只有三个样本，
-            model.fit(X.reshape(-1, 1)[:1], y[:1])
-            mean_score = r2_score(y[1:], model.predict(X.reshape(-1, 1)[1:]))
-    else:
-        model.fit(X.reshape(-1, 1), y)
-        mean_score = r2_score(y, model.predict(X.reshape(-1, 1)))
-    return mean_score  # 假设R^2大于0.8表示存在平方关系
-
-
-def check_sqrt_relationship_with_ml(X, y, fit_intercept=True, is_cv=True):
-    """
-    测试X和y之间是否存在根号关系
-    注意：在实际情况下，根号关系可能不是直接测试，而是通过变换数据来间接测试。
-
-    y = sqrt(kx+b  ) => sqrt(y) =kx+b
-    """
-    if y.min() < 0:
-        # 存在负数，无法做根号运算
-        return 0.0
-    return check_linear_relationship_with_ml(X, np.sqrt(y), is_cv=is_cv, fit_intercept=fit_intercept)
-
-
-DETECT_CORRELATION_ML_FUNC_MAP: dict[str, Callable[[np.ndarray, np.ndarray], np.ndarray]] = {
-    "linear": check_linear_relationship_with_ml,  # 线性关系
-    "quadratic": check_quadratic_relationship_with_ml,  # 二次项关系
-    "sqrt": check_sqrt_relationship_with_ml,  # # 根号关系
-    "linear_no_intercept": partial(check_linear_relationship_with_ml, fit_intercept=False),  # 线性关系
-    "quadratic_no_intercept": partial(check_quadratic_relationship_with_ml, fit_intercept=False),  # 二次项关系
-    "sqrt_no_intercept": partial(check_sqrt_relationship_with_ml, fit_intercept=False),  # # 根号关系
-}
-
-
-class RCABaseException(Exception):
-    def __init__(self, message=None):
-        self.message = message
-
-    def __str__(self):
-        return f"Task failed.Message: {self.message}"
-
-
-class PreprocessForInlineData(object):
-    def __init__(self,
-                 df: pyspark.sql.dataframe,
-                 group_by_list: list[str],
-                 columns_list: list[str],
-                 convert_to_numeric_list: list[str],
-                 merge_operno_list: List[Dict[str, List[str]]],
-                 merge_prodg1_list: List[Dict[str, List[str]]],
-                 merge_product_list: List[Dict[str, List[str]]]
-                 ):
-        self.df = df
-        self.groupby_list = group_by_list
-        self.columns_list = columns_list
-        # self.certain_column = certain_column
-        # self.key_words = key_words
-        self.convert_to_numeric_list = convert_to_numeric_list
-        self.merge_operno_list = merge_operno_list
-        self.merge_prodg1_list = merge_prodg1_list
-        self.merge_product_list = merge_product_list
-
-    @staticmethod
-    def pre_process(df: pyspark.sql.dataframe, convert_to_numeric_list: list[str]) -> pyspark.sql.dataframe:
-        for column in convert_to_numeric_list:
-            df = df.withColumn(column, col(column).cast('double'))
-        if 'SITE_COUNT' in convert_to_numeric_list:
-            convert_to_numeric_list.remove('SITE_COUNT')
-        df = df.dropna(subset=convert_to_numeric_list, how='all')
-        return df
-
-    @staticmethod
-    def integrate_columns(df: pyspark.sql.dataframe,
-                          merge_operno_list: List[Dict[str, List[str]]],
-                          merge_prodg1_list: List[Dict[str, List[str]]],
-                          merge_product_list: List[Dict[str, List[str]]]) -> pyspark.sql.dataframe:
-        """
-        Integrate columns in the DataFrame based on the provided list.
-
-        :param df: The input DataFrame.
-        :param merge_operno_list: A list of dictionaries where each dictionary contains values to be merged.
-               Example: [{'2F.CDS10_XX.TDS01': ['2F.CDS10', 'XX.TDS01']},
-                         {'2F.CDS20_XX.CDS20': ['2F.CDS20', 'XX.CDS20']}]
-        :param merge_prodg1_list: A list of dictionaries for merging 'PRODG1' column in a similar fashion.
-        :param merge_product_list: A list of dictionaries for merging 'PRODUCT_ID' column in a similar fashion.
-
-        :return: DataFrame with 'OPER_NO' and other specified columns integrated according to the merge rules.
-        """
-        df_merged = PreprocessForInlineData.integrate_single_column(df, merge_operno_list, 'OPE_NO')
-        df_merged = PreprocessForInlineData.integrate_single_column(df_merged, merge_prodg1_list, 'PRODG1')
-        df_merged = PreprocessForInlineData.integrate_single_column(df_merged, merge_product_list, 'PRODUCT_ID')
-        return df_merged
-
-    @staticmethod
-    def integrate_single_column(df: pyspark.sql.dataframe,
-                                merge_list: List[Dict[str, List[str]]],
-                                column_name: str) -> pyspark.sql.dataframe:
-        """
-        Integrate columns in the DataFrame based on the provided list.
-
-        :param df: The input DataFrame.
-        :param merge_list: A list of dictionaries where each dictionary contains values to be merged.
-        :param column_name: The name of the column to be merged.
-
-        :return: DataFrame with specified column integrated according to the merge rules.
-        """
-        splitter_comma = ","
-        if merge_list is not None and len(merge_list) > 0:
-            values_to_replace = [list(rule.values())[0] for rule in merge_list]
-            merged_values = [splitter_comma.join(list(rule.values())[0]) for rule in merge_list]
-
-            for values, replacement_value in zip(values_to_replace, merged_values):
-                df = df.withColumn(column_name,
-                                   when(col(column_name).isin(values), replacement_value).otherwise(col(column_name)))
-        return df
-
-    @staticmethod
-    def add_feature_stats_within_groups(df_integrate: pyspark.sql.dataframe, grpby_list) -> pyspark.sql.dataframe:
-        unique_params_within_groups = (df_integrate.groupBy(grpby_list + ['PARAMETRIC_NAME'])
-                                       .agg(
-            countDistinct('WAFER_ID', when(df_integrate['label'] == 0, 1)).alias('GOOD_NUM'),
-            countDistinct('WAFER_ID', when(df_integrate['label'] == 1, 1)).alias('BAD_NUM'))
-                                       .na.fill(0))
-        return unique_params_within_groups
-
-    def run(self) -> pyspark.sql.dataframe:
-        df_select = self.df.select(self.columns_list)
-        # df_esd = self.exclude_some_data(df=df_select, key_words=self.key_words, certain_column=self.certain_column)
-        df_integrate = self.integrate_columns(df=df_select,
-                                              merge_operno_list=self.merge_operno_list,
-                                              merge_prodg1_list=self.merge_prodg1_list,
-                                              merge_product_list=self.merge_product_list)
-
-        df_preprocess = self.pre_process(df=df_integrate, convert_to_numeric_list=self.convert_to_numeric_list)
-        return df_preprocess
-
-
-class CorrelationDetectAlgorithm(object):
-
-    @staticmethod
-    def get_corr_func(x: pd.Series, y: pd.Series) -> float:
-        corr_func = partial(algo_detect_relation, r2_threshold=R2_THRESHOLD)
-        return corr_func(x, y)
-
-
-class ProcessBaseDFBySite(object):
-    """
-    check处理by site 算法的异常表征dataframe
-    df 字段：
-    -----------------
-    NAME, | value
-    """
-
-    @staticmethod
-    def process_by_site(df: pyspark.sql.DataFrame):
-        if df.isEmpty():
-            raise RCABaseException("异常表征数据为空，请检查！")
-        value_cols = list(set(df.columns) - {"NAME"})
-
-        # print("base _df process show")
-        df = df.withColumn('id', lit(1))
-        # 去除缺失值，行转列
-        df = df.dropna().groupby("id").pivot("NAME").agg(first(value_cols[0])).drop("id")
-        # df.show()
-        # base_cols:取出NAME的取值，转换为list
-        base_cols = list(set(df.columns))
-        return df, base_cols
-
-
-class PrePareResultTableToCommonSchema(object):
-    # 总表结构字段，和对应的类型
-    schema: Dict[str, str] = {
-        "REQUEST_ID": "string",
-        "INDEX_NO": "int",
-        "ANALYSIS_NAME": "string",
-        "PRODG1": 'string',
-        "PRODUCT_ID": "string",
-        "OPE_NO": "string",
-        "EQP_NAME": "string",
-        "CHAMBER_NAME": "string",
-        "PARAMETRIC_NAME": "string",
-        "STATS": "string",
-        "COUNT": "float",
-        "WEIGHT": "double",
-        "MARK": "string"
-    }
-
-    @staticmethod
-    def run(df: pyspark.sql.DataFrame) -> Optional[pyspark.sql.DataFrame]:
-
-        if df is None:  # 去除不满足要求的数据，如果为空，返回None
-            return None
-
-        if df.isEmpty():  # 空表，返回None.
-            return None
-
-        df_columns = df.columns
-        for col, col_type in PrePareResultTableToCommonSchema.schema.items():
-            if col not in df_columns:
-                df = df.withColumn(col, lit(None).cast(col_type))  # 按照schmea 指定类型赋值空列
-        result = df.select(*(PrePareResultTableToCommonSchema.schema.keys()))
-        return result
 
 
 class CorrCompareInlineBySiteAlgorithm(PreprocessForInlineData):
@@ -491,7 +184,7 @@ class CorrCompareInlineBySiteAlgorithm(PreprocessForInlineData):
                       .transform(PrePareResultTableToCommonSchema.run)
                       # .orderBy(col("WEIGHT").desc()) # 放在各模块合并后的结果处理中
                       )
-
+            result.persist(StorageLevel.MEMORY_AND_DISK)
             return result
 
         # 异常表征预处理,获取异常表征参数列
@@ -518,7 +211,8 @@ class CorrCompareInlineBySiteAlgorithm(PreprocessForInlineData):
                 mean(col_name).alias(col_name) for col_name in common_site_columns
             )
         )
-
+        df_processed.persist(StorageLevel.MEMORY_AND_DISK)  # 缓存数据集
+        source_df.unpersist()
         # print("df_processed show")
         # df_processed.show(10)
 
@@ -544,8 +238,11 @@ class CorrCompareInlineBySiteAlgorithm(PreprocessForInlineData):
             )
         )
         )
+        result_all_stat_cols.persist(StorageLevel.MEMORY_AND_DISK)  # 缓存数据集
 
         if result_all_stat_cols.count() == 0:
+            df_processed.unpersist()
+
             return None
         # 小表
         base_df_pandas = base_df.toPandas()
@@ -574,12 +271,15 @@ class CorrCompareInlineBySiteAlgorithm(PreprocessForInlineData):
 
         # 纵向拼接多列关系检测的结果表
         if len(result_list) == 0:
+            df_processed.unpersist()
+            result_all_stat_cols.unpersist()
             return None
         elif len(result_list) == 1:
             return result_list[0]
         else:
             result = reduce(lambda x, y: x.union(y), result_list)
-
+        df_processed.unpersist()  # 释放不再使用的数据集
+        result_all_stat_cols.unpersist()  # 释放不再使用的数据集
         return result
 
 

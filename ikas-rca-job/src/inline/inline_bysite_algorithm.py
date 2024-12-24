@@ -2,17 +2,17 @@ import pyspark
 import pandas as pd
 from pca import pca
 from typing import Union, List, Dict
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import LinearSVC
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import SGDClassifier, LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import SGDClassifier, LogisticRegression
-from src.exceptions.rca_base_exception import RCABaseException
 from pyspark.sql.types import StructType, StructField, StringType, FloatType
 from pyspark.sql.functions import pandas_udf, PandasUDFType, lit, col, when, sum as spark_sum, monotonically_increasing_id, countDistinct
+from src.exceptions.rca_base_exception import RCABaseException
 
 
 class DataPreprocessorForInline:
@@ -137,11 +137,12 @@ class DataPreprocessorForInline:
 class ExtractFeaturesBySite:
     @staticmethod
     def process_missing_values_for_site(df: pd.DataFrame,
-                                        label_site_columns: list[list[str]],
+                                        good_site_columns: list[str],
+                                        bad_site_columns: list[str],
                                         missing_value_threshold: Union[int, float] = 0.7,
                                         process_miss_site_mode: str = 'drop') -> pd.DataFrame:
         assert process_miss_site_mode in ['drop', 'fill']
-        site_columns = [item for sublist in label_site_columns for item in sublist]
+        site_columns = good_site_columns + bad_site_columns
         if process_miss_site_mode == 'drop':
             # drop rows based on the missing value threshold
             df = df.dropna(subset=site_columns, thresh=missing_value_threshold)
@@ -162,23 +163,26 @@ class ExtractFeaturesBySite:
             'PERCENTILE_75': row.quantile(0.75)})
 
     @staticmethod
-    def calculate_site_stats(df: pd.DataFrame,
-                             grpby_list: list[str],
-                             site_columns: list[str],
-                             label: int) -> pd.DataFrame:
+    def calculate_site_stats(df: pd.DataFrame, grpby_list: list[str], site_columns: list[str],
+                             good_or_bad: str) -> pd.DataFrame:
+        assert good_or_bad in ['good', 'bad'], "Label could only be 'good' or 'bad'"
         selected_df = df[grpby_list + ['WAFER_ID', 'PARAMETRIC_NAME'] + site_columns].reset_index(drop=True)
         # Perform statistical calculations for each row
         side_features = selected_df.apply(lambda row: ExtractFeaturesBySite.calculate_statistics(row[site_columns]),
                                           axis=1)
         side_features = side_features.fillna(0)
         df_with_features = pd.concat([selected_df, side_features], axis=1)
-        df_with_features['label'] = label
+        if good_or_bad == 'good':
+            df_with_features['label'] = 0
+        else:
+            df_with_features['label'] = 1
         return df_with_features
 
     @staticmethod
     def extract_features_by_site(df: pd.DataFrame,
                                  grpby_list: list[str],
-                                 label_site_columns: list[list[str]],
+                                 good_site_columns: list[str],
+                                 bad_site_columns: list[str],
                                  missing_value_threshold: Union[int, float] = 0.7,
                                  process_miss_site_mode: str = 'drop') -> Union[pd.DataFrame, None]:
         """
@@ -194,20 +198,24 @@ class ExtractFeaturesBySite:
         - Union[pd.DataFrame, None]: DataFrame with extracted features or None if no data is available.
         """
         df_pandas_specific_ = ExtractFeaturesBySite.process_missing_values_for_site(df=df,
-                                                                                    label_site_columns=label_site_columns,
+                                                                                    good_site_columns=good_site_columns,
+                                                                                    bad_site_columns=bad_site_columns,
                                                                                     missing_value_threshold=missing_value_threshold,
                                                                                     process_miss_site_mode=process_miss_site_mode)
         if df_pandas_specific_.shape[0] != 0:
-            features_list = []
-            for label, site_columns in enumerate(label_site_columns):
-                features_df = ExtractFeaturesBySite.calculate_site_stats(df_pandas_specific_, grpby_list, site_columns,
-                                                                         label)
-                features_list.append(features_df)
-
-            combined_features = pd.concat(features_list, axis=0)
-            side_with_features_all = combined_features[
+            side_with_features1 = ExtractFeaturesBySite.calculate_site_stats(df_pandas_specific_, grpby_list,
+                                                                             good_site_columns,
+                                                                             good_or_bad='good')
+            side_with_features2 = ExtractFeaturesBySite.calculate_site_stats(df_pandas_specific_, grpby_list,
+                                                                             bad_site_columns,
+                                                                             good_or_bad='bad')
+            side_with_features1_select = side_with_features1[
                 grpby_list + ['WAFER_ID', 'PARAMETRIC_NAME', 'MAX_VAL', 'MIN_VAL', 'MEDIAN',
                               'AVERAGE', 'STD_DEV', 'PERCENTILE_25', 'PERCENTILE_75', 'label']]
+            side_with_features2_select = side_with_features2[
+                grpby_list + ['WAFER_ID', 'PARAMETRIC_NAME', 'MAX_VAL', 'MIN_VAL', 'MEDIAN',
+                              'AVERAGE', 'STD_DEV', 'PERCENTILE_25', 'PERCENTILE_75', 'label']]
+            side_with_features_all = pd.concat([side_with_features1_select, side_with_features2_select], axis=0)
             return side_with_features_all
 
 
@@ -215,7 +223,8 @@ class FitInlineModelBySite:
     def __init__(self,
                  df: pyspark.sql.dataframe,
                  grpby_list: list[str],
-                 label_site_columns: list[list[str]],
+                 good_site_columns: list[str],
+                 bad_site_columns: list[str],
                  process_miss_site_mode: str,
                  columns_to_process: list[str],
                  missing_value_threshold: Union[int, float],
@@ -236,7 +245,8 @@ class FitInlineModelBySite:
         """
         self.df = df
         self.grpby_list = grpby_list
-        self.label_site_columns = label_site_columns
+        self.good_site_columns = good_site_columns
+        self.bad_site_columns = bad_site_columns
         self.process_miss_site_mode = process_miss_site_mode
         self.columns_to_process = columns_to_process
         self.missing_value_threshold = missing_value_threshold
@@ -295,8 +305,9 @@ class FitInlineModelBySite:
         return res_top_select
 
     @staticmethod
-    def fit_pca_model(df: pyspark.sql.dataframe, grpby_list, label_site_columns, columns_to_process,
-                      process_miss_site_mode, missing_value_threshold) -> pyspark.sql.dataframe:
+    def fit_pca_model(df: pyspark.sql.dataframe, grpby_list, good_site_columns, bad_site_columns, columns_to_process,
+                      process_miss_site_mode,
+                      missing_value_threshold) -> pyspark.sql.dataframe:
         schema_all = StructType([StructField("features", StringType(), True),
                                  StructField("importance", FloatType(), True),
                                  StructField("algorithm_satisfied", StringType(), True),
@@ -306,7 +317,8 @@ class FitInlineModelBySite:
         def get_model_result(df_run):
             side_with_features_all = ExtractFeaturesBySite.extract_features_by_site(df=df_run,
                                                                                     grpby_list=grpby_list,
-                                                                                    label_site_columns=label_site_columns,
+                                                                                    good_site_columns=good_site_columns,
+                                                                                    bad_site_columns=bad_site_columns,
                                                                                     missing_value_threshold=missing_value_threshold,
                                                                                     process_miss_site_mode=process_miss_site_mode)
             # 如果df_run中的good_site_columns和bad_site_columns的每列缺失比例都大于70%, 则无法提取特征, side_with_features_all就是None
@@ -383,7 +395,7 @@ class FitInlineModelBySite:
 
     # 暂时没用到fit_classification_model
     @staticmethod
-    def fit_classification_model(df, grpby_list, label_site_columns,
+    def fit_classification_model(df, grpby_list, good_site_columns, bad_site_columns,
                                  columns_to_process, process_miss_site_mode, missing_value_threshold, model):
         schema_all = StructType([StructField("features", StringType(), True),
                                  StructField("importance", FloatType(), True)])
@@ -392,7 +404,8 @@ class FitInlineModelBySite:
         def get_model_result(df_run):
             side_with_features_all = ExtractFeaturesBySite.extract_features_by_site(df=df_run,
                                                                                     grpby_list=grpby_list,
-                                                                                    label_site_columns=label_site_columns,
+                                                                                    good_site_columns=good_site_columns,
+                                                                                    bad_site_columns=bad_site_columns,
                                                                                     missing_value_threshold=missing_value_threshold,
                                                                                     process_miss_site_mode=process_miss_site_mode)
             if side_with_features_all is None:
@@ -433,13 +446,15 @@ class FitInlineModelBySite:
     def run(self):
         if self.model == 'pca':
             res = self.fit_pca_model(df=self.df, grpby_list=self.grpby_list,
-                                     label_site_columns=self.label_site_columns,
+                                     good_site_columns=self.good_site_columns,
+                                     bad_site_columns=self.bad_site_columns,
                                      columns_to_process=self.columns_to_process,
                                      process_miss_site_mode=self.process_miss_site_mode,
                                      missing_value_threshold=self.missing_value_threshold)
         else:
             res = self.fit_classification_model(df=self.df, grpby_list=self.grpby_list,
-                                                label_site_columns=self.label_site_columns,
+                                                good_site_columns=self.good_site_columns,
+                                                bad_site_columns=self.bad_site_columns,
                                                 columns_to_process=self.columns_to_process,
                                                 process_miss_site_mode=self.process_miss_site_mode,
                                                 missing_value_threshold=self.missing_value_threshold,
@@ -532,32 +547,8 @@ class SplitInlineModelResults:
 
 
 class ExertInlineBySite:
-
     @staticmethod
-    def check_site_columns(*site_columns_lists: List[str]):
-        label_site_columns = []
-        all_sites = set()
-
-        for site_columns in site_columns_lists:
-            if site_columns is not None:
-                unique_columns = list(set(site_columns))
-                for site in unique_columns:
-                    if site in all_sites:
-                        msg = f"{site} 在多个类别中重复定义, 不能重复定义同一个site"
-                        raise RCABaseException(msg)
-                    all_sites.add(site)
-                if unique_columns:
-                    label_site_columns.append(unique_columns)
-
-        if len(label_site_columns) < 2:
-            msg = "请至少指定两类不同的站点列, 且不能为空"
-            raise RCABaseException(msg)
-
-        return label_site_columns
-
-    @staticmethod
-    def fit_by_site_model(*site_columns_lists: List[str],
-                          df: pyspark.sql.dataframe,
+    def fit_by_site_model(df: pyspark.sql.dataframe,
                           request_id: str,
                           merge_operno_list: List[Dict[str, List[str]]],
                           merge_prodg1_list: List[Dict[str, List[str]]],
@@ -569,35 +560,43 @@ class ExertInlineBySite:
                           convert_to_numeric_list=None,
                           grpby_list=None,
                           certain_column=None,
-                          model='pca',
-                          ):
-        label_site_columns = ExertInlineBySite.check_site_columns(good_site_columns, bad_site_columns, *site_columns_lists)
-        selected_site_columns = [item for sublist in label_site_columns for item in sublist]
+                          model='pca'):
+        if good_site_columns is None or len(good_site_columns) == 0:
+            msg = "good sites为空, 请指定good sites."
+            raise RCABaseException(msg)
+        if bad_site_columns is None or len(bad_site_columns) == 0:
+            msg = "bad sites为空, 请指定bad sites."
+            raise RCABaseException(msg)
+
+        # drop duplicates
+        good_site_columns = list(set(good_site_columns))
+        bad_site_columns = list(set(bad_site_columns))
+        site_columns = good_site_columns + bad_site_columns
 
         if grpby_list is None or len(grpby_list) == 0:
             grpby_list = ['OPE_NO']
 
         if columns_list is None:
-            columns_list = grpby_list + ['WAFER_ID', 'PARAMETRIC_NAME', 'SITE_COUNT', 'AVERAGE'] + selected_site_columns
+            columns_list = grpby_list + ['WAFER_ID', 'PARAMETRIC_NAME', 'SITE_COUNT', 'AVERAGE'] + site_columns
 
         if key_words is None:
-            key_words = ['CXS', 'CYS', 'FDS']
+            key_words = ['CXS', 'CYS']
 
         if convert_to_numeric_list is None:
-            convert_to_numeric_list = ['SITE_COUNT', 'AVERAGE'] + selected_site_columns
+            convert_to_numeric_list = ['SITE_COUNT', 'AVERAGE'] + site_columns
 
         if certain_column is None:
             certain_column = 'PARAMETRIC_NAME'
 
         grps_all, add_parametric_stats_df, df_preprocess = DataPreprocessorForInline(df=df,
-                                                                                     grpby_list=grpby_list,
-                                                                                     columns_list=columns_list,
-                                                                                     certain_column=certain_column,
-                                                                                     key_words=key_words,
-                                                                                     convert_to_numeric_list=convert_to_numeric_list,
-                                                                                     merge_operno_list=merge_operno_list,
-                                                                                     merge_prodg1_list=merge_prodg1_list,
-                                                                                     merge_product_list=merge_product_list).run()
+                                                                                         grpby_list=grpby_list,
+                                                                                         columns_list=columns_list,
+                                                                                         certain_column=certain_column,
+                                                                                         key_words=key_words,
+                                                                                         convert_to_numeric_list=convert_to_numeric_list,
+                                                                                         merge_operno_list=merge_operno_list,
+                                                                                         merge_prodg1_list=merge_prodg1_list,
+                                                                                         merge_product_list=merge_product_list).run()
         print(f"按照{'+'.join(grpby_list)}分组后的数据, 一共有{grps_all.count()}种不同的分组.")
 
         if df_preprocess.isEmpty():
@@ -606,12 +605,27 @@ class ExertInlineBySite:
 
         res = FitInlineModelBySite(df=df_preprocess,
                                    grpby_list=grpby_list,
-                                   label_site_columns=label_site_columns,
+                                   good_site_columns=good_site_columns,
+                                   bad_site_columns=bad_site_columns,
                                    process_miss_site_mode='drop',
                                    columns_to_process=['AVERAGE', 'MAX_VAL', 'MEDIAN', 'MIN_VAL', 'STD_DEV',
                                                        'PERCENTILE_25', 'PERCENTILE_75'],
                                    missing_value_threshold=0.7,
                                    model=model).run()
+        # res = res.filter('algorithm_satisfied==True')
+        # m = res.count()
+        # if m == 0:
+        #     unique_importance_values = res.select('importance').distinct().collect()
+        #     unique_importance_values_list = [row.importance for row in unique_importance_values]
+        #     if -1 in unique_importance_values_list and len(unique_importance_values_list) == 1:
+        #         msg = f"按照{'+'.join(grpby_list)}分组后的数据，没有具有差异性的参数"
+        #         raise RCABaseException(msg)
+        #     elif -2 in unique_importance_values_list and len(unique_importance_values_list) == 1:
+        #         msg = f"按照{'+'.join(grpby_list)}分组后的数据，每个组合中的site_values的缺失值超过了70%，无法进行分析"
+        #         raise RCABaseException(msg)
+        #     else:
+        #         msg = f"按照{'+'.join(grpby_list)}分组后的数据，site_values的缺失值超过了70%，且没有具有差异性的参数"
+        #         raise RCABaseException(msg)
 
         final_res = SplitInlineModelResults(df=res, grpby_list=grpby_list, request_id=request_id,
                                             add_parametric_stats_df=add_parametric_stats_df).run()
@@ -674,9 +688,6 @@ if __name__ == "__main__":
                                         "mergeChamber": [],
                                         "goodSite": ["SITE1_VAL", "SITE3_VAL", "SITE5_VAL", "SITE7_VAL", "SITE9_VAL"],
                                         "badSite": ["SITE2_VAL", "SITE4_VAL", "SITE6_VAL", "SITE8_VAL"],
-                                        # "goodSite": ["SITE1_VAL", "SITE3_VAL", "SITE5_VAL", "SITE7_VAL", "SITE9_VAL"],
-                                        # "badSite": ["SITE2_VAL", "SITE4_VAL", "SITE6_VAL", "SITE8_VAL"],
-                                        # "OtherSite3": ["SITE10_VAL", "SITE11_VAL", "SITE12_VAL", "SITE13_VAL"],
                                         # "mergeOperno": []
                                         "mergeOperno": [{"1F.FQE10,1C.CDG10": ["1F.FQE10", "1C.CDG10"]},
                                                         {"1U.EQW10_1U.PQW10": ["1U.EQW10", "1U.PQW10"]}]
@@ -691,38 +702,24 @@ if __name__ == "__main__":
     parse_dict = json.loads(request_params)
 
     merge_operno = list(parse_dict.get('mergeOperno')) if parse_dict.get('mergeOperno') else None
-    merge_prodg1 = list(parse_dict.get('mergeProdg1')) if parse_dict.get('mergeProdg1') else None
-    merge_product = list(parse_dict.get('mergeProductId')) if parse_dict.get('mergeProductId') else None
-
     good_site_columns_ = list(parse_dict.get('goodSite')) if parse_dict.get('goodSite') else None
     bad_site_columns_ = list(parse_dict.get('badSite')) if parse_dict.get('badSite') else None
-    other_site_column3_ = list(parse_dict.get('OtherSite3')) if parse_dict.get('OtherSite3') else None
-    other_site_column4_ = list(parse_dict.get('OtherSite4')) if parse_dict.get('OtherSite4') else None
-    other_site_column5_ = list(parse_dict.get('OtherSite5')) if parse_dict.get('OtherSite5') else None
-    print("good_site_columns_:", good_site_columns_)
-    print("bad_site_columns_:", bad_site_columns_)
-    print("other_site_column3_:", other_site_column3_)
-    print("other_site_column4_:", other_site_column4_)
-    print("other_site_column5_:", other_site_column5_)
-
+    merge_prodg1 = list(parse_dict.get('mergeProdg1')) if parse_dict.get('mergeProdg1') else None
+    merge_product = list(parse_dict.get('mergeProductId')) if parse_dict.get('mergeProductId') else None
     # grpby_list_ = ['OPE_NO']
     grpby_list_ = ['OPE_NO', 'PRODUCT_ID']
 
     from datetime import datetime
 
     time1 = datetime.now()
-    final_res_ = ExertInlineBySite.fit_by_site_model(other_site_column3_,
-                                                     other_site_column4_,
-                                                     other_site_column5_,
-                                                     df=df_spark,
+    final_res_ = ExertInlineBySite.fit_by_site_model(df=df_spark,
                                                      request_id=request_id_,
                                                      grpby_list=grpby_list_,
                                                      merge_operno_list=merge_operno,
-                                                     merge_prodg1_list=merge_prodg1,
-                                                     merge_product_list=merge_product,
                                                      good_site_columns=good_site_columns_,
-                                                     bad_site_columns=bad_site_columns_
-                                                     )
+                                                     bad_site_columns=bad_site_columns_,
+                                                     merge_prodg1_list=merge_prodg1,
+                                                     merge_product_list=merge_product)
     time2 = datetime.now()
     final_res_.show(50)
     # final_res_pandas = final_res_.toPandas()

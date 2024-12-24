@@ -61,9 +61,9 @@ class ParseAlgorithmSqlConfig:
             raise ValueError(f"json配置数据解析异常: {e}")
 
         request_param = data.get("requestParam", {})
-        request_id = request_param.get("correlation_filter_upload_id")
-
-        if not request_id:
+        correlation_filter_upload_id = request_param.get("correlation_filter_upload_id")
+    
+        if not correlation_filter_upload_id:
             logger.error(f"base_sql_query 生成失败, json配置数据中correlation_filter_upload_id属性值异常: {json_data}")
             raise ValueError("base_sql_query 生成失败, json配置数据中correlation_filter_upload_id属性值异常")
 
@@ -74,11 +74,9 @@ class ParseAlgorithmSqlConfig:
         # 生成基础 SQL 查询, 区分wafer和site
         algorithm_type = data.get("algorithm")
         if algorithm_type == "correlation_by_wafer":
-            base_sql_query = f"SELECT NAME AS WAFER_ID, VAL AS VALUE FROM rca.CONF_ANOMALY WHERE REQUEST_ID='{request_id}'"
-        elif algorithm_type == "correlation_by_site":
-            base_sql_query = f"SELECT NAME, VAL AS VALUE FROM rca.CONF_ANOMALY WHERE REQUEST_ID='{request_id}'"
-        else:
-            raise ValueError("base_sql_query 生成失败, json配置数据中algorithm类型异常")
+            base_sql_query = f"SELECT NAME AS WAFER_ID, VAL AS VALUE FROM rca.CONF_ANOMALY WHERE REQUEST_ID='{correlation_filter_upload_id}'"
+        else: 
+            base_sql_query = f"SELECT NAME, VAL AS VALUE FROM rca.CONF_ANOMALY WHERE REQUEST_ID='{correlation_filter_upload_id}'"
 
         logging.info("*||*" + "=" * 30 + "-" + f" [base sql query] " + "=" * 30 + "*||*")
         logging.info(f"{base_sql_query}")
@@ -114,7 +112,12 @@ class ParseAlgorithmSqlConfig:
                                                                   end_date,
                                                                   selected_fields=process_select_fields,
                                                                   proper_conf=properties_config),
+            "qtime": ParseAlgorithmSqlConfig.generate_sql_query(data, "qtime",
+                                                                  proper_conf=properties_config)
+                                                                  
         }
+
+        
 
         for query_name, sql_query in queries.items():
             if sql_query:
@@ -128,9 +131,9 @@ class ParseAlgorithmSqlConfig:
         return results
 
     @staticmethod
-    def generate_sql_query(json_config: dict, algo_type: str, table_name: str, time_field: str, start_date: str,
-                           end_date: str,
-                           selected_fields: List[str], proper_conf: pd.DataFrame) -> Union[str, None]:
+    def generate_sql_query(json_config: dict, algo_type: str, table_name: str = None, time_field: str = None, start_date: str = None,
+                           end_date: str = None,
+                           selected_fields: List[str] = None, proper_conf: pd.DataFrame = None) -> Union[str, None]:
         """
         生成特定表的 SQL 查询语句。
 
@@ -155,6 +158,11 @@ class ParseAlgorithmSqlConfig:
 
         if algo_type not in data.keys():
             return None
+        
+        request_id = json_config.get("requestId")
+        if algo_type == "qtime":
+            return f"SELECT PRODUCT_ID, PRODG1, WAFER_ID, ROUND(DIFF_TIME/60, 2) as DIFF_TIME, CONCAT(OPE_NO, '/', NEXT_OPE_NO) as OPE_NO \
+              FROM DWD_WAFER_OPENO_Q_TIME WHERE REQUEST_ID='{request_id}'"
 
         sql_conditions = [f"{time_field} >= '{start_date}' AND {time_field} <= '{end_date}'"]
 
@@ -198,8 +206,11 @@ class ParseAlgorithmSqlConfig:
                         sql_conditions += key_mapping_sql
                 else:
                     sql_conditions = " WHERE " + " AND ".join(sql_conditions)
-            elif algo_type in "inline" and algorithm_type == "correlation_by_site":
-                sql_conditions = " WHERE DATA_LEVEL='Site' AND " + " AND ".join(sql_conditions)
+            elif algo_type in "inline":
+                if algorithm_type == "correlation_by_site":
+                    sql_conditions = " WHERE DATA_LEVEL='Site' AND PARAMETRIC_NAME NOT REGEXP '(CXS|CYS)' AND " + " AND ".join(sql_conditions)
+                else:
+                    sql_conditions = " WHERE PARAMETRIC_NAME NOT REGEXP '(CXS|CYS)' AND " + " AND ".join(sql_conditions)
             else:
                 sql_conditions = " WHERE " + " AND ".join(sql_conditions)
 

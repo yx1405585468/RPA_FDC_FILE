@@ -42,12 +42,18 @@ def execute_algorithm(sparkSession, json_config, properties_config):
     elif json_config['algorithm'] == "inline_by_site":
         # 执行 inline 算法的 ETL
         inline_main.process_record_by_site(sparkSession, json_config, properties_config)
+    elif json_config['algorithm'].startswith("inline_by"):
+        # by mode异常特征提取算法
+        inline_main.process_record_by_zone(sparkSession, json_config, properties_config)
     elif json_config['algorithm'] == "wat_by_wafer":
         # 执行 wat 算法的 ETL
         wat_main.process_record_by_wafer(sparkSession, json_config, properties_config)
     elif json_config['algorithm'] == "wat_by_site":
         # 执行 wat 算法的 ETL
         wat_main.process_record_by_site(sparkSession, json_config, properties_config)
+    elif json_config['algorithm'].startswith("wat_by"):
+        # 执行 wat 算法的 ETL
+        wat_main.process_record_by_zone(sparkSession, json_config, properties_config)
     elif json_config['algorithm'] == "fdc_advanced":
         # 执行 inline 算法的 ETL
         fdc_advanced_main.process_record_fdc_advanced(sparkSession, json_config, properties_config)
@@ -60,6 +66,10 @@ def execute_algorithm(sparkSession, json_config, properties_config):
     elif json_config['algorithm'] == "correlation_by_site":
         # by site异常特征提取算法
         AnomalyCharacterizationAlgorithm.process_record_by_site(sparkSession, json_config, properties_config)
+    elif json_config['algorithm'].startswith("correlation_by"):
+        # by mode异常特征提取算法
+        AnomalyCharacterizationAlgorithm.process_record_by_zone(sparkSession, json_config, properties_config)
+
 
 
 def main():
@@ -79,6 +89,41 @@ def main():
     if args.json_file:
         json_file = spark_session.sparkContext.textFile(args.json_file).collect()
         json_config = json.loads(json_file[0])
+        ope_nos = json_config.get('requestParam', {}).get('operNo')
+        uva_key = json_config.get('requestParam', {}).get('uva')
+        inline_key = json_config.get('requestParam', {}).get('inline')
+        wat_key = json_config.get('requestParam', {}).get('wat')
+        process_key = json_config.get('requestParam', {}).get('process')
+        if uva_key:
+            operno_list = uva_key.get("operNo")
+            uva_list = []
+            for i in operno_list:
+                uva_list.extend(i.split(","))
+            json_config['requestParam']['uva']["operNo"] = uva_list
+        if inline_key:
+            operno_list = inline_key.get("operNo")
+            inline_list = []
+            for i in operno_list:
+                inline_list.extend(i.split(","))
+            json_config['requestParam']['inline']["operNo"] = inline_list
+        if wat_key:
+            operno_list = wat_key.get("operNo")
+            wat_list = []
+            for i in operno_list:
+                wat_list.extend(i.split(","))
+            json_config['requestParam']['wat']["operNo"] = wat_list
+        if process_key:
+            operno_list = process_key.get("operNo")
+            process_list = []
+            for i in operno_list:
+                process_list.extend(i.split(","))
+            json_config['requestParam']['process']["operNo"] = process_list
+        # 处理dyb类型站点
+        if ope_nos:
+            data = []
+            for single_ope in ope_nos:
+                data.extend(single_ope.split(','))
+            json_config['requestParam']['operNo'] = data
         logger.info(f"json_config:{json_config}")
     try:
         # 读取Spark配置

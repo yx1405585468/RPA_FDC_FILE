@@ -1,13 +1,5 @@
 # -*- coding: utf-8 -*-
 """
-by wafer 关系检测算法
-    uva: from  uva_by_wafer_algorithm.CorrCompareUvaByWaferAlgorithm
-    inline
-    wat
-
-"""
-
-"""
 关系检测算法：
 输入的两组一维异源数据， 检测是否存在如下关系：
     1. 线性关系： y= kx +b
@@ -15,30 +7,16 @@ by wafer 关系检测算法
     3. 根号关系：y = \sqrt{x}  《===》 y^2 = kx +b
     4. 不满足以上关系，则返回weight 0.
 """
-import numpy as np
+
 from typing import Callable
-from sklearn.metrics import r2_score, mean_squared_error
-import pyspark
-from typing import List, Dict, Optional
-from pyspark.sql.functions import max, countDistinct, when, lit, pandas_udf, PandasUDFType, monotonically_increasing_id, \
-    split, collect_set, concat_ws, col, count, countDistinct, udf, mean,first
-from pyspark.sql.types import StringType, IntegerType, DoubleType, StructType, StructField, FloatType
-from src.exceptions.rca_base_exception import RCABaseException
+from sklearn.metrics import r2_score
 import pandas as pd
-from functools import partial, reduce
-from pyspark.sql.functions import sum as F_sum
-from src.correlation.building_dataframe import BuildSparkDataframe
-from pyspark.sql import SparkSession
+from functools import partial
 import numpy as np
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import cross_val_score
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.linear_model import Lasso
-
-
-
 
 def check_linear_relation(x: pd.Series, y: pd.Series) -> np.ndarray:
     """
@@ -165,7 +143,7 @@ def check_sqrt_relationship_with_ml(X, y, fit_intercept=True, is_cv=True):
 
     y = sqrt(kx+b  ) => sqrt(y) =kx+b
     """
-    if y.min() <0:
+    if y.min() < 0:
         # 存在负数，无法做根号运算
         return 0.0
     return check_linear_relationship_with_ml(X, np.sqrt(y), is_cv=is_cv, fit_intercept=fit_intercept)

@@ -2,6 +2,8 @@ import pyspark
 import pandas as pd
 from pca import pca
 from typing import Union, List, Dict
+
+from pyspark import StorageLevel
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import LinearSVC
 from sklearn.tree import DecisionTreeClassifier
@@ -11,7 +13,8 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import GridSearchCV
 from pyspark.sql.types import StructType, StructField, StringType, FloatType
-from pyspark.sql.functions import pandas_udf, PandasUDFType, lit, col, when, sum as spark_sum, monotonically_increasing_id, countDistinct
+from pyspark.sql.functions import pandas_udf, PandasUDFType, lit, col, when, sum as spark_sum, \
+    monotonically_increasing_id, countDistinct
 from src.exceptions.rca_base_exception import RCABaseException
 
 
@@ -23,7 +26,8 @@ class DataPreprocessorForWat:
                  convert_to_numeric_list: list[str],
                  merge_operno_list: List[Dict[str, List[str]]],
                  merge_prodg1_list: List[Dict[str, List[str]]],
-                 merge_product_list: List[Dict[str, List[str]]]
+                 merge_product_list: List[Dict[str, List[str]]],
+                 merge_parametric_name_list: List[Dict[str, List[str]]]
                  ):
         self.df = df
         self.grpby_list = grpby_list
@@ -32,6 +36,7 @@ class DataPreprocessorForWat:
         self.merge_operno_list = merge_operno_list
         self.merge_prodg1_list = merge_prodg1_list
         self.merge_product_list = merge_product_list
+        self.merge_parametric_name_list = merge_parametric_name_list
 
     @staticmethod
     def select_columns(df: pyspark.sql.dataframe, columns_list: list[str]) -> pyspark.sql.dataframe:
@@ -57,7 +62,8 @@ class DataPreprocessorForWat:
     def integrate_columns(df: pyspark.sql.dataframe,
                           merge_operno_list: List[Dict[str, List[str]]],
                           merge_prodg1_list: List[Dict[str, List[str]]],
-                          merge_product_list: List[Dict[str, List[str]]]) -> pyspark.sql.dataframe:
+                          merge_product_list: List[Dict[str, List[str]]],
+                          merge_parametric_name_list: List[Dict[str, List[str]]]) -> pyspark.sql.dataframe:
         """
         Integrate columns in the DataFrame based on the provided list.
 
@@ -73,6 +79,7 @@ class DataPreprocessorForWat:
         df_merged = DataPreprocessorForWat.integrate_single_column(df, merge_operno_list, 'OPE_NO')
         df_merged = DataPreprocessorForWat.integrate_single_column(df_merged, merge_prodg1_list, 'PRODG1')
         df_merged = DataPreprocessorForWat.integrate_single_column(df_merged, merge_product_list, 'PRODUCT_ID')
+        df_merged = DataPreprocessorForWat.integrate_single_column(df_merged, merge_parametric_name_list, 'PARAMETRIC_NAME')
         return df_merged
 
     @staticmethod
@@ -122,10 +129,18 @@ class DataPreprocessorForWat:
         df_integrate = self.integrate_columns(df=df_select,
                                               merge_operno_list=self.merge_operno_list,
                                               merge_prodg1_list=self.merge_prodg1_list,
-                                              merge_product_list=self.merge_product_list)
+                                              merge_product_list=self.merge_product_list,
+                                              merge_parametric_name_list=self.merge_parametric_name_list)
+        df_integrate.persist(StorageLevel.MEMORY_AND_DISK)
+        self.df.unpersist()
         grps_all = self.commonality_analysis(df_run=df_integrate, grpby_list=self.grpby_list)
-        add_parametric_stats_df = self.add_feature_stats_within_groups(df_integrate=df_integrate, grpby_list=self.grpby_list)
+        add_parametric_stats_df = self.add_feature_stats_within_groups(df_integrate=df_integrate,
+                                                                       grpby_list=self.grpby_list)
         df_preprocess = self.pre_process(df=df_integrate, convert_to_numeric_list=self.convert_to_numeric_list)
+        grps_all.persist(StorageLevel.MEMORY_AND_DISK)
+        add_parametric_stats_df.persist(StorageLevel.MEMORY_AND_DISK)
+        df_preprocess.persist(StorageLevel.MEMORY_AND_DISK)
+        df_integrate.unpersist()
         return grps_all, add_parametric_stats_df, df_preprocess
 
 
@@ -453,6 +468,7 @@ class FitWatModelBySite:
                                                 process_miss_site_mode=self.process_miss_site_mode,
                                                 missing_value_threshold=self.missing_value_threshold,
                                                 model=self.model)
+        self.df.unpersist()
         return res
 
 
@@ -524,17 +540,20 @@ class SplitWatModelResults:
         m = df.count()
         if m == 0:
             final_res = self.add_parametric_stats_df.withColumn('WEIGHT', lit(0))
-            final_res = self.add_certain_column(df=final_res, request_id=self.request_id, total_algorithm_satisfied=True)
+            final_res = self.add_certain_column(df=final_res, request_id=self.request_id,
+                                                total_algorithm_satisfied=True)
             return final_res
 
         df = df.withColumn('temp', lit(0))
         split_res = self.split_calculate_features(df=df, grpby_list=self.grpby_list, by='temp')
         split_res = split_res.drop('algorithm_satisfied')
         res_all = split_res.join(self.add_parametric_stats_df, on=self.grpby_list + ['PARAMETRIC_NAME'], how='left')
-        missing_rows = self.add_parametric_stats_df.join(res_all, on=self.grpby_list + ['PARAMETRIC_NAME'], how='left_anti')
+        missing_rows = self.add_parametric_stats_df.join(res_all, on=self.grpby_list + ['PARAMETRIC_NAME'],
+                                                         how='left_anti')
         missing_rows = missing_rows.withColumn('importance', lit(0))
         res_all_update_missing_features = res_all.unionByName(missing_rows, allowMissingColumns=True)
         final_res = self.add_certain_column(df=res_all_update_missing_features, request_id=self.request_id)
+        self.add_parametric_stats_df.unpersist()
         return final_res
 
 
@@ -545,6 +564,7 @@ class ExertWatBySite:
                           merge_operno_list: List[Dict[str, List[str]]],
                           merge_prodg1_list: List[Dict[str, List[str]]],
                           merge_product_list: List[Dict[str, List[str]]],
+                          merge_parametric_name_list: List[Dict[str, List[str]]],
                           good_site_columns: List[str],
                           bad_site_columns: List[str],
                           columns_list=None,
@@ -568,7 +588,8 @@ class ExertWatBySite:
             grpby_list = ['OPE_NO']
 
         if columns_list is None:
-            columns_list = ['WAFER_ID', 'PRODG1', 'OPE_NO', 'PRODUCT_ID', 'PARAMETRIC_NAME', 'SITE_COUNT', 'AVERAGE'] + site_columns
+            columns_list = ['WAFER_ID', 'PRODG1', 'OPE_NO', 'PRODUCT_ID', 'PARAMETRIC_NAME', 'SITE_COUNT',
+                            'AVERAGE'] + site_columns
 
         if convert_to_numeric_list is None:
             convert_to_numeric_list = ['SITE_COUNT', 'AVERAGE'] + site_columns
@@ -579,9 +600,10 @@ class ExertWatBySite:
                                                                                   convert_to_numeric_list=convert_to_numeric_list,
                                                                                   merge_operno_list=merge_operno_list,
                                                                                   merge_prodg1_list=merge_prodg1_list,
-                                                                                  merge_product_list=merge_product_list).run()
+                                                                                  merge_product_list=merge_product_list,
+                                                                                  merge_parametric_name_list=merge_parametric_name_list).run()
         print(f"按照{'+'.join(grpby_list)}分组后的数据, 一共有{grps_all.count()}种不同的分组.")
-
+        grps_all.unpersist()
         if df_preprocess.isEmpty():
             msg = '数据库中暂无数据.'
             raise RCABaseException(msg)
@@ -597,6 +619,7 @@ class ExertWatBySite:
 
         final_res = SplitWatModelResults(df=res, grpby_list=grpby_list, request_id=request_id,
                                          add_parametric_stats_df=add_parametric_stats_df).run()
+
         return final_res
 
 
@@ -667,6 +690,7 @@ if __name__ == "__main__":
     grpby_list_ = []
 
     from datetime import datetime
+
     time1 = datetime.now()
     final_res_ = ExertWatBySite.fit_by_site_model(df=df_spark,
                                                   request_id=request_id_,

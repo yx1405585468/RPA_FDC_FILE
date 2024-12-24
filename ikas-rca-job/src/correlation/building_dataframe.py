@@ -7,6 +7,7 @@ from typing import Optional
 
 import pandas as pd
 import pyspark.sql
+from pyspark import StorageLevel
 from pyspark.sql import SparkSession
 
 logging.basicConfig(
@@ -47,7 +48,7 @@ class BuildSparkDataframe:
                 .option("numPartitions", "3") \
                 .option("fetchsize", "1000") \
                 .load()
-
+            result_df.persist(StorageLevel.MEMORY_AND_DISK)
             # 检查数据集是否为空
             if result_df.count() == 0:
                 logger.error(f"result_df for query {algo_type} 数据集为空。")
